@@ -1,27 +1,15 @@
-﻿import vk
+﻿from time import sleep
 from tkinter import *
-from time import sleep
 from tkinter.ttk import Combobox, Label
+
+import vk
 
 access_token = 0
 api = 0
 
 
-class vkAPI(vk.API):
-    def __call__(self, method_name, **method_kwargs):
-        sleep(1)
-        return vk.API.__call__(self, method_name, **method_kwargs)
-
-
-def save_values(f):
-    s_a_v_e_d__f_o_r__l_a_t_e_r = dict()
-
-    def g(*args):
-        if list(*args) not in s_a_v_e_d__f_o_r__l_a_t_e_r:
-            s_a_v_e_d__f_o_r__l_a_t_e_r[list(*args)] = f(*args)
-        return s_a_v_e_d__f_o_r__l_a_t_e_r[list(*args)]
-
-    return g
+def _():
+    sleep(1)
 
 
 def api_init():
@@ -30,11 +18,11 @@ def api_init():
     try:
         access_token = open("token").read()
         vk_session = vk.Session(access_token=access_token)
-        api = vkAPI(vk_session, v='5.35', lang='ru', timeout=10)
+        api = vk.API(vk_session, v='5.35', lang='ru', timeout=10)
     except:
         build_auth_window()
         vk_session = vk.AuthSession(app_id='4771271', user_login=login, user_password=password, scope=4096)
-        api = vkAPI(vk_session, v='5.35', lang='ru', timeout=10)
+        api = vk.API(vk_session, v='5.35', lang='ru', timeout=10)
         access_token = vk_session.access_token
         f = open("token", 'w')
         f.write(vk_session.access_token)
@@ -66,35 +54,35 @@ def build_auth_window():
     root.mainloop()
 
 
-@save_values
+# @save_values
 def name_by_id(num):
     global api
     try:
-        if num in names:
-            return names[num]
-        # a = do_vk_request({'user_ids': str(num)}, 'users.get', need_token=True)
+        if num not in names:
         a = api.users.get(user_ids=num)
-        # time.sleep(0.3)
+        _()
         print(a)
         # now what?
-        names[num] = a[0]['response'][0]['first_name'] + ' ' + a[0]['response'][0]['last_name']
-        return a[0]['response'][0]['first_name'] + ' ' + a[0]['response'][0]['last_name']
+        names[num] = a[0]['first_name'] + ' ' + a[0]['last_name']
+
+        return names[num]
     except:
         print(num, "name error")
 
 
 def to_put(a):
-    return a.m_id, a.user_name, len(a.body)
+    return a['id'], name_by_id(a['user_id']), len(a['body'])
 
 
 def grab_messages(count, offset, chat_id):
     # a = do_vk_request({'count': count, 'offset': offset, 'chat_id': chat_id}, 'messages.getHistory')
     global api
     a = api.messages.getHistory(count=count, offset=offset, chat_id=chat_id)
+    _()
     try:
-        a = a[0]['response']['items']
+        a = a['items']
     except:
-        print(a)
+        print('messages', a)
     ans = set()
     for i in a:
         ans.add(to_put(i))
@@ -132,6 +120,7 @@ def get_chats(recalc=True):
             b = 1
         # temp = do_vk_request({'chat_id': b}, 'messages.getChat')[0]
         temp = api.messages.getChat(chat_id=b)
+        _()
         print(temp)
         # now what?
         while temp['admin_id'] != 0:
@@ -139,11 +128,16 @@ def get_chats(recalc=True):
             bchats[chats[-1]] = len(chats) - 1
             b += 1
             # temp = do_vk_request({'chat_id': b}, 'messages.getChat')[0]
-            temp = api.messages.getChat(chat_id=b)
-            print(temp)
+            try:
+                temp = api.messages.getChat(chat_id=b)
+                _()
+            except:
+                break
+            print('here', temp)
             # now what?
             # time.sleep(0.3)
-        f = open('chats', 'w')
+        print(chats, bchats)
+        f = open('chats', 'w', encoding='utf-8')
         f.write(str(chats) + '\n' + str(bchats))
         f.close()
         return chats, bchats
@@ -163,7 +157,7 @@ def update(chat_id):
     except:
         our = set()
     grab_all_messages(our, chat_id)
-    f = open(str(chat_id), 'w')
+    f = open(str(chat_id), 'w', encoding='utf-8')
     f.write(str(our))
     f.close()
     return our
@@ -173,6 +167,7 @@ def get_friends(user_id=233692275):
     global api
     # res = do_vk_request({'user_id': str(id)}, 'friends.get', need_token=False)
     res = api.friends.get(user_id=user_id)
+    _()
     print(res)
     # now what?
     return set(res[0]['response']['items'])
