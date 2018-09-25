@@ -1,9 +1,16 @@
 ﻿import vk
 from tkinter import *
+from time import sleep
 from tkinter.ttk import Combobox, Label
 
 access_token = 0
 api = 0
+
+
+class vkAPI(vk.API):
+    def __call__(self, method_name, **method_kwargs):
+        sleep(1)
+        return vk.API.__call__(self, method_name, **method_kwargs)
 
 
 def save_values(f):
@@ -23,11 +30,11 @@ def api_init():
     try:
         access_token = open("token").read()
         vk_session = vk.Session(access_token=access_token)
-        api = vk.API(vk_session, v='5.35', lang='ru', timeout=10)
+        api = vkAPI(vk_session, v='5.35', lang='ru', timeout=10)
     except:
         build_auth_window()
         vk_session = vk.AuthSession(app_id='4771271', user_login=login, user_password=password, scope=4096)
-        api = vk.API(vk_session, v='5.35', lang='ru', timeout=10)
+        api = vkAPI(vk_session, v='5.35', lang='ru', timeout=10)
         access_token = vk_session.access_token
         f = open("token", 'w')
         f.write(vk_session.access_token)
