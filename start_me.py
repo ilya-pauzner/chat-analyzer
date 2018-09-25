@@ -13,20 +13,23 @@ def _():
 
 
 def api_init():
-    global api
-    global access_token
+    global api, access_token
     try:
+        # DB!
         access_token = open("token").read()
+
         vk_session = vk.Session(access_token=access_token)
-        api = vk.API(vk_session, v='5.35', lang='ru', timeout=10)
     except:
         build_auth_window()
         vk_session = vk.AuthSession(app_id='4771271', user_login=login, user_password=password, scope=4096)
-        api = vk.API(vk_session, v='5.35', lang='ru', timeout=10)
-        access_token = vk_session.access_token
-        f = open("token", 'w')
-        f.write(vk_session.access_token)
-        f.close()
+
+    api = vk.API(vk_session, v='5.35', lang='ru', timeout=10)
+    access_token = vk_session.access_token
+
+    # DB!
+    f = open("token", 'w')
+    f.write(vk_session.access_token)
+    f.close()
 
 
 def enter(event):
@@ -54,16 +57,15 @@ def build_auth_window():
     root.mainloop()
 
 
-# @save_values
 def name_by_id(num):
     global api
     try:
         if num not in names:
-        a = api.users.get(user_ids=num)
-        _()
-        print(a)
-        # now what?
-        names[num] = a[0]['first_name'] + ' ' + a[0]['last_name']
+            a = api.users.get(user_ids=num)
+            _()
+            print(a)
+            # now what?
+            names[num] = a[0]['first_name'] + ' ' + a[0]['last_name']
 
         return names[num]
     except:
@@ -75,7 +77,6 @@ def to_put(a):
 
 
 def grab_messages(count, offset, chat_id):
-    # a = do_vk_request({'count': count, 'offset': offset, 'chat_id': chat_id}, 'messages.getHistory')
     global api
     a = api.messages.getHistory(count=count, offset=offset, chat_id=chat_id)
     _()
@@ -86,7 +87,6 @@ def grab_messages(count, offset, chat_id):
     ans = set()
     for i in a:
         ans.add(to_put(i))
-    # time.sleep(0.9)
     return ans
 
 
@@ -109,16 +109,16 @@ def get_chats(recalc=True):
     global api
     if recalc:
         try:
+            # DB!
             f = open('chats')
             chats, bchats = eval(f.readline()), eval(f.readline())
-            b = len(chats)
             f.close()
+
             b = len(chats)
         except:
             chats = [0]
             bchats = dict()
             b = 1
-        # temp = do_vk_request({'chat_id': b}, 'messages.getChat')[0]
         temp = api.messages.getChat(chat_id=b)
         _()
         print(temp)
@@ -127,25 +127,27 @@ def get_chats(recalc=True):
             chats.append(temp['title'])
             bchats[chats[-1]] = len(chats) - 1
             b += 1
-            # temp = do_vk_request({'chat_id': b}, 'messages.getChat')[0]
             try:
                 temp = api.messages.getChat(chat_id=b)
                 _()
             except:
                 break
             print('here', temp)
-            # now what?
-            # time.sleep(0.3)
         print(chats, bchats)
+
+        # DB!
         f = open('chats', 'w', encoding='utf-8')
         f.write(str(chats) + '\n' + str(bchats))
         f.close()
+
         return chats, bchats
     else:
         try:
+            # DB!
             f = open('chats')
             a, b = eval(f.readline()), eval(f.readline())
             f.close()
+
             return a, b
         except:
             return get_chats(recalc=True)
@@ -153,27 +155,22 @@ def get_chats(recalc=True):
 
 def update(chat_id):
     try:
+        # DB!
         our = eval(open(str(chat_id)).read())
     except:
         our = set()
     grab_all_messages(our, chat_id)
+
+    # DB!
     f = open(str(chat_id), 'w', encoding='utf-8')
     f.write(str(our))
     f.close()
+
     return our
 
 
-def get_friends(user_id=233692275):
-    global api
-    # res = do_vk_request({'user_id': str(id)}, 'friends.get', need_token=False)
-    res = api.friends.get(user_id=user_id)
-    _()
-    print(res)
-    # now what?
-    return set(res[0]['response']['items'])
-
-
 def vk_stop():
+    # DB!
     f = open('names.txt', 'w')
     f.write(str(names))
     f.close()
@@ -185,6 +182,7 @@ def vk_full_update():
 
 
 try:
+    # DB!
     names = eval(open('names.txt').read())
 except:
     names = dict()
@@ -217,7 +215,6 @@ def show_standart(chat_id, mess):
     t.pack()
 
     b = Button(res, text='Послать в беседу')
-    # b.bind('<Button-1>', lambda n: do_vk_request({'chat_id': chat_id, 'message': s}, 'messages.send'))
     b.bind('<Button-1>', lambda n: api.messages.send(chat_id=chat_id, message=s))
     b.pack()
 
