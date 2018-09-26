@@ -6,6 +6,8 @@ import vk
 
 access_token = 0
 api = 0
+names = dict()
+ncb = 0
 
 
 def _():
@@ -13,23 +15,28 @@ def _():
 
 
 def api_init():
-    global api, access_token
+    global api, access_token, names
     try:
         # DB!
         access_token = open("token").read()
-
         vk_session = vk.Session(access_token=access_token)
     except:
         build_auth_window()
         vk_session = vk.AuthSession(app_id='4771271', user_login=login, user_password=password, scope=4096)
+        access_token = vk_session.access_token
 
     api = vk.API(vk_session, v='5.35', lang='ru', timeout=10)
-    access_token = vk_session.access_token
 
     # DB!
     f = open("token", 'w')
     f.write(vk_session.access_token)
     f.close()
+
+    try:
+        # DB!
+        names = eval(open('names.txt').read())
+    except:
+        names = dict()
 
 
 def enter(event):
@@ -58,13 +65,11 @@ def build_auth_window():
 
 
 def name_by_id(num):
-    global api
+    global api, names
     try:
         if num not in names:
             a = api.users.get(user_ids=num)
             _()
-            print(a)
-            # now what?
             names[num] = a[0]['first_name'] + ' ' + a[0]['last_name']
 
         return names[num]
@@ -80,10 +85,7 @@ def grab_messages(count, offset, chat_id):
     global api
     a = api.messages.getHistory(count=count, offset=offset, chat_id=chat_id)
     _()
-    try:
-        a = a['items']
-    except:
-        print('messages', a)
+    a = a['items']
     ans = set()
     for i in a:
         ans.add(to_put(i))
@@ -99,31 +101,28 @@ def grab_all_messages(ans, chat_id):
         for elem in l:
             if elem in ans:
                 ans |= l
-                return 0
+                return
         i += 200
         ans |= l
-    print('\n\nsent\n\n')
 
 
-def get_chats(recalc=True):
+def get_chats():
     global api
-    if recalc:
-        try:
-            # DB!
-            f = open('chats')
-            chats, bchats = eval(f.readline()), eval(f.readline())
-            f.close()
+    try:
+        # DB!
+        f = open('chats')
+        a, b = eval(f.readline()), eval(f.readline())
+        f.close()
 
-            b = len(chats)
-        except:
-            chats = [0]
-            bchats = dict()
-            b = 1
+        return a, b
+    except:
+
+        chats = [0]
+        bchats = dict()
+        b = len(chats)
         temp = api.messages.getChat(chat_id=b)
         _()
-        print(temp)
-        # now what?
-        while temp['admin_id'] != 0:
+        while True:
             chats.append(temp['title'])
             bchats[chats[-1]] = len(chats) - 1
             b += 1
@@ -132,8 +131,6 @@ def get_chats(recalc=True):
                 _()
             except:
                 break
-            print('here', temp)
-        print(chats, bchats)
 
         # DB!
         f = open('chats', 'w', encoding='utf-8')
@@ -141,16 +138,6 @@ def get_chats(recalc=True):
         f.close()
 
         return chats, bchats
-    else:
-        try:
-            # DB!
-            f = open('chats')
-            a, b = eval(f.readline()), eval(f.readline())
-            f.close()
-
-            return a, b
-        except:
-            return get_chats(recalc=True)
 
 
 def update(chat_id):
@@ -171,6 +158,7 @@ def update(chat_id):
 
 def vk_stop():
     # DB!
+    global names
     f = open('names.txt', 'w')
     f.write(str(names))
     f.close()
@@ -181,15 +169,8 @@ def vk_full_update():
         update(i)
 
 
-try:
-    # DB!
-    names = eval(open('names.txt').read())
-except:
-    names = dict()
-
-
 def show_standart(chat_id, mess):
-    global api
+    global api, cb
     res = Tk()
     res.geometry('400x800')
     our = dict()
@@ -221,33 +202,31 @@ def show_standart(chat_id, mess):
     res.mainloop()
 
 
-# .
-
 def besedka(event):
+    global ncb
     bes = bchats[ncb.get()]
     curr = update(bes)
     show_standart(bchats[ncb.get()], curr)
 
 
+def show_main_window():
+    global ncb, cb
+    main = Tk()
+    main.geometry('500x500')
+    b5 = Button(main, text='Запуск')
+    b5.bind('<Button-1>', besedka)
+    b5.pack()
+    cb = Combobox(main, values=['По количеству сообщений', 'По средней длине сообщения', 'По количеству символов'],
+                  height=20, width=30)
+    cb.set('По количеству сообщений')
+    cb.pack()
+    ncb = Combobox(main, values=chats[1:], height=20, width=30)
+    ncb.set('Яичница')
+    ncb.pack()
+    main.mainloop()
+
+
 api_init()
-
 chats, bchats = get_chats()
-
-main = Tk()
-main.geometry('500x500')
-
-b5 = Button(main, text='Запуск')
-b5.bind('<Button-1>', besedka)
-b5.pack()
-
-cb = Combobox(main, values=['По количеству сообщений', 'По средней длине сообщения', 'По количеству символов'],
-              height=20, width=30)
-cb.set('По количеству сообщений')
-cb.pack()
-
-ncb = Combobox(main, values=chats[1:], height=20, width=30)
-ncb.set('Яичница')
-ncb.pack()
-
-main.mainloop()
+show_main_window()
 vk_stop()
