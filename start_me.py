@@ -221,6 +221,8 @@ def show_standart(chat_id, mess):
     res.mainloop()
 
 
+# .
+
 def besedka(event):
     bes = bchats[ncb.get()]
     curr = update(bes)
