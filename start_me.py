@@ -1,19 +1,33 @@
-﻿from time import sleep
-from tkinter import *
-from tkinter.ttk import Combobox, Label
+﻿# -*- encoding: utf-8 -*-
+from time import sleep
+import time
+from Tkinter import *
+from ttk import Combobox, Label
 
+import logging
 import vk
 
-access_token = 0
-api = 0
-names = dict()
-ncb = 0
+
+def logger(func):
+    def wrapper(*args, **kwargs):
+        res = func(*args, **kwargs)
+        if "place" in kwargs:
+            logging.info("{}\t{}".format(func.__name__, kwargs["place"]))
+        else:
+            logging.info("{}".format(func.__name__))
+        logging.debug("{} {} {}".format(func.__name__, args, kwargs))
+        sys.stdout.flush()
+        return res
+
+    return wrapper
 
 
-def _():
+@logger
+def _(place, *args, **kwargs):
     sleep(1)
 
 
+@logger
 def api_init():
     global api, access_token, names
     try:
@@ -26,7 +40,7 @@ def api_init():
         access_token = vk_session.access_token
 
     api = vk.API(vk_session, v='5.35', lang='ru', timeout=10)
-
+    assert api is not None
     # DB!
     f = open("token", 'w')
     f.write(vk_session.access_token)
@@ -39,6 +53,7 @@ def api_init():
         names = dict()
 
 
+@logger
 def enter(event):
     global login, password
     login = e1.get()
@@ -46,6 +61,7 @@ def enter(event):
     root.destroy()
 
 
+@logger
 def build_auth_window():
     global root, e1, e2
     root = Tk()
@@ -64,12 +80,13 @@ def build_auth_window():
     root.mainloop()
 
 
+@logger
 def name_by_id(num):
     global api, names
     try:
         if num not in names:
             a = api.users.get(user_ids=num)
-            _()
+            _(place="name by id")
             names[num] = a[0]['first_name'] + ' ' + a[0]['last_name']
 
         return names[num]
@@ -77,14 +94,16 @@ def name_by_id(num):
         print(num, "name error")
 
 
+@logger
 def to_put(a):
     return a['id'], name_by_id(a['user_id']), len(a['body'])
 
 
+@logger
 def grab_messages(count, offset, chat_id):
     global api
     a = api.messages.getHistory(count=count, offset=offset, chat_id=chat_id)
-    _()
+    _(place="grab messages")
     a = a['items']
     ans = set()
     for i in a:
@@ -92,6 +111,7 @@ def grab_messages(count, offset, chat_id):
     return ans
 
 
+@logger
 def grab_all_messages(ans, chat_id):
     i = 0
     l = [0]
@@ -106,6 +126,7 @@ def grab_all_messages(ans, chat_id):
         ans |= l
 
 
+@logger
 def get_chats():
     global api
     try:
@@ -116,19 +137,18 @@ def get_chats():
 
         return a, b
     except:
-
         chats = [0]
         bchats = dict()
         b = len(chats)
         temp = api.messages.getChat(chat_id=b)
-        _()
+        _(place="get chats")
         while True:
             chats.append(temp['title'])
             bchats[chats[-1]] = len(chats) - 1
             b += 1
             try:
                 temp = api.messages.getChat(chat_id=b)
-                _()
+                _(place="get chats while true", cnt=b)
             except:
                 break
 
@@ -140,6 +160,7 @@ def get_chats():
         return chats, bchats
 
 
+@logger
 def update(chat_id):
     try:
         # DB!
@@ -156,6 +177,7 @@ def update(chat_id):
     return our
 
 
+@logger
 def vk_stop():
     # DB!
     global names
@@ -164,11 +186,13 @@ def vk_stop():
     f.close()
 
 
+@logger
 def vk_full_update():
     for i in range(1, 100):
         update(i)
 
 
+@logger
 def show_standart(chat_id, mess):
     global api, cb
     res = Tk()
@@ -202,6 +226,7 @@ def show_standart(chat_id, mess):
     res.mainloop()
 
 
+@logger
 def besedka(event):
     global ncb
     bes = bchats[ncb.get()]
@@ -209,6 +234,7 @@ def besedka(event):
     show_standart(bchats[ncb.get()], curr)
 
 
+@logger
 def show_main_window():
     global ncb, cb
     main = Tk()
@@ -225,6 +251,14 @@ def show_main_window():
     ncb.pack()
     main.mainloop()
 
+
+access_token = 0
+api = None
+names = dict()
+ncb = 0
+
+logging.basicConfig(format=u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s',
+                    level=logging.INFO)
 
 api_init()
 chats, bchats = get_chats()
