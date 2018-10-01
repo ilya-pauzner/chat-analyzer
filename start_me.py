@@ -23,42 +23,46 @@ def logger(func):
 
 
 @logger
-def _(place, *args, **kwargs):
+def vk_timeout(place, *args, **kwargs):
     sleep(1)
 
 
 @logger
+def db_init():
+    global cursor
+    result = list(cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='token_table'"))
+    if result == []:
+        # first-time
+        cursor.execute('CREATE TABLE token_table (value text)')
+    result = list(cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='id_to_name'"))
+    if result == []:
+        # first-time
+        cursor.execute('CREATE TABLE id_to_name (id text, name text)')
+
+
+@logger
 def api_init():
-    global api, access_token, names, cursor
-    conn = sqlite3.connect('db.db')
+    global api, access_token, cursor, conn
+    conn = sqlite3.connect('chat_data.db')
     cursor = conn.cursor()
-    try:
-        # DB!
-        for token in cursor.execute('SELECT * from token_table'):
-            access_token = token
-        # access_token = open("token").read()
-        vk_session = vk.Session(access_token=access_token)
-    except:
+    db_init()
+
+    tokens = list(cursor.execute('SELECT * from token_table'))
+    if len(tokens) == 0:
         build_auth_window()
         vk_session = vk.AuthSession(app_id='4771271', user_login=login, user_password=password, scope=4096)
         access_token = vk_session.access_token
-
-        cursor.execute('CREATE TABLE token_table (value text)')
-        cursor.execute('INSERT INTO token_table VALUES("' + access_token + '")')
-        # cursor.commit()
+        cursor.execute('INSERT INTO token_table VALUES (?)', (access_token,))
+        conn.commit()
+    elif len(tokens) == 1:
+        access_token = tokens[0]
+        vk_session = vk.Session(access_token=access_token)
+    else:
+        logging.error('More than one token in database')
+        vk_session = None
 
     api = vk.API(vk_session, v='5.35', lang='ru', timeout=10)
     assert api is not None
-    # DB!
-    # f = open("token", 'w')
-    # f.write(vk_session.access_token)
-    # f.close()
-
-    try:
-        # DB!
-        names = eval(open('names.txt').read())
-    except:
-        names = dict()
 
 
 @logger
@@ -90,17 +94,17 @@ def build_auth_window():
 
 @logger
 def name_by_id(num):
-    global api, names
-    try:
-        if num not in names:
-            a = api.users.get(user_ids=num)
-            _(place="name by id")
-            names[num] = a[0]['first_name'] + ' ' + a[0]['last_name']
-
-        return names[num]
-    except:
-        pass
-        #print(num, "name error")
+    global api, cursor, conn
+    result = list(cursor.execute("SELECT name FROM id_to_name WHERE id=(?)", (num,)))
+    if result == []:
+        # first-time this guy
+        a = api.users.get(user_ids=num)
+        vk_timeout(place="name by id")
+        name = a[0]['first_name'] + ' ' + a[0]['last_name']
+        cursor.execute('INSERT INTO id_to_name VALUES (?, ?)', (num, name))
+        conn.commit()
+        return name
+    return result[0][0]
 
 
 @logger
@@ -112,7 +116,7 @@ def to_put(a):
 def grab_messages(count, offset, chat_id):
     global api
     a = api.messages.getHistory(count=count, offset=offset, chat_id=chat_id)
-    _(place="grab messages")
+    vk_timeout(place="grab messages")
     a = a['items']
     ans = set()
     for i in a:
@@ -140,7 +144,7 @@ def get_chats():
     global api
     try:
         # DB!
-        f = open('chats')
+        f = open('chats', encoding='utf-8')
         a, b = eval(f.readline()), eval(f.readline())
         f.close()
 
@@ -150,14 +154,14 @@ def get_chats():
         bchats = dict()
         b = len(chats)
         temp = api.messages.getChat(chat_id=b)
-        _(place="get chats")
+        vk_timeout(place="get chats")
         while True:
             chats.append(temp['title'])
             bchats[chats[-1]] = len(chats) - 1
             b += 1
             try:
                 temp = api.messages.getChat(chat_id=b)
-                _(place="get chats while true", cnt=b)
+                vk_timeout(place="get chats while true", cnt=b)
             except:
                 break
 
@@ -189,10 +193,7 @@ def update(chat_id):
 @logger
 def vk_stop():
     # DB!
-    global names
-    f = open('names.txt', 'w')
-    f.write(str(names))
-    f.close()
+    pass
 
 
 @logger
@@ -263,7 +264,6 @@ def show_main_window():
 
 access_token = 0
 api = None
-names = dict()
 ncb = 0
 
 logging.basicConfig(format=u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s',
