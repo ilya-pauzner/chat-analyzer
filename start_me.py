@@ -38,11 +38,11 @@ def db_init():
     result = list(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='userid_to_username'"))
     if not result:
         # first-time
-        connection.execute('CREATE TABLE userid_to_username (id text, name text)')
+        connection.execute('CREATE TABLE userid_to_username (id integer, name text)')
     result = list(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chatid_to_chatname'"))
     if not result:
         # first-time
-        connection.execute('CREATE TABLE chatid_to_chatname (id text, name text)')
+        connection.execute('CREATE TABLE chatid_to_chatname (id integer, name text)')
 
 
 @logger
@@ -124,6 +124,7 @@ def grab_all_messages(chat_id):
     i = 0
     l = [0]
     table_name = " 'chat" + str(chat_id) + "' "
+    # print("SELECT name FROM sqlite_master WHERE type='table' AND name=" + table_name)
     result = list(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=" + table_name))
     if not result:
         # first-time
@@ -146,37 +147,22 @@ def grab_all_messages(chat_id):
         i += 200
 
 
-# \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
-
-
 @logger
 def get_chats():
-    global api
+    global api, connection
     try:
-        # DB!
-        f = open('chats', encoding='utf-8')
-        a, b = eval(f.readline()), eval(f.readline())
-        f.close()
-
-        return a, b
+        border = int(connection.execute('SELECT MAX(id) FROM chatid_to_chatname').fetchone()[0])
     except:
-        chats = []
-        bchats = dict()
-        while True:
-            try:
-                temp = api.messages.getChat(chat_id=len(chats) + 1)
-                vk_timeout(place="get chats while true", cnt=len(chats) + 1)
-            except:
-                break
-            chats.append(temp['title'])
-            bchats[chats[-1]] = len(chats)
-
-        # DB!
-        f = open('chats', 'w', encoding='utf-8')
-        f.write(str(chats) + '\n' + str(bchats))
-        f.close()
-
-        return chats, bchats
+        border = 0
+    start = border + 1
+    while True:
+        try:
+            temp = api.messages.getChat(chat_id=start)
+            vk_timeout(place="get chats while true", cnt=start)
+        except:
+            break
+        connection.execute('INSERT INTO chatid_to_chatname VALUES (?, ?)', (start, temp['title']))
+        start += 1
 
 
 @logger
@@ -215,15 +201,16 @@ def show_standart(chat_id):
 
 @logger
 def besedka(event):
-    global ncb
-    bes = bchats[ncb.get()]
+    global ncb, connection
+    bes = list(connection.execute('SELECT id FROM chatid_to_chatname WHERE name=(?)', (ncb.get(),)))[0][0]
+    print(bes)
     grab_all_messages(bes)
-    show_standart(bchats[ncb.get()])
+    show_standart(bes)
 
 
 @logger
 def show_main_window():
-    global ncb, cb
+    global ncb, cb, connection
     main = Tk()
     main.geometry('500x500')
     b5 = Button(main, text='Запуск')
@@ -233,8 +220,9 @@ def show_main_window():
                   height=20, width=30)
     cb.set('По количеству сообщений')
     cb.pack()
-    ncb = Combobox(main, values=chats[1:], height=20, width=30)
-    ncb.set('Яичница')
+    ncb = Combobox(main, values=list(connection.execute('SELECT name from chatid_to_chatname')), height=20,
+                   width=30)
+    # ncb.set('Яичница')
     ncb.pack()
     main.mainloop()
 
@@ -245,5 +233,5 @@ logging.basicConfig(format=u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(a
                     level=logging.INFO)
 
 api_init()
-chats, bchats = get_chats()
+get_chats()
 show_main_window()
