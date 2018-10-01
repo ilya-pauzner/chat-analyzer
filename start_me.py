@@ -1,10 +1,10 @@
 ﻿# -*- encoding: utf-8 -*-
-from time import sleep
-import time
-from Tkinter import *
-from ttk import Combobox, Label
-
 import logging
+import sqlite3
+from time import sleep
+from tkinter import *
+from tkinter.ttk import Combobox, Label
+
 import vk
 
 
@@ -29,22 +29,30 @@ def _(place, *args, **kwargs):
 
 @logger
 def api_init():
-    global api, access_token, names
+    global api, access_token, names, cursor
+    conn = sqlite3.connect('db.db')
+    cursor = conn.cursor()
     try:
         # DB!
-        access_token = open("token").read()
+        for token in cursor.execute('SELECT * from token_table'):
+            access_token = token
+        # access_token = open("token").read()
         vk_session = vk.Session(access_token=access_token)
     except:
         build_auth_window()
         vk_session = vk.AuthSession(app_id='4771271', user_login=login, user_password=password, scope=4096)
         access_token = vk_session.access_token
 
+        cursor.execute('CREATE TABLE token_table (value text)')
+        cursor.execute('INSERT INTO token_table VALUES("' + access_token + '")')
+        # cursor.commit()
+
     api = vk.API(vk_session, v='5.35', lang='ru', timeout=10)
     assert api is not None
     # DB!
-    f = open("token", 'w')
-    f.write(vk_session.access_token)
-    f.close()
+    # f = open("token", 'w')
+    # f.write(vk_session.access_token)
+    # f.close()
 
     try:
         # DB!
@@ -91,7 +99,8 @@ def name_by_id(num):
 
         return names[num]
     except:
-        print(num, "name error")
+        pass
+        #print(num, "name error")
 
 
 @logger
@@ -116,7 +125,7 @@ def grab_all_messages(ans, chat_id):
     i = 0
     l = [0]
     while len(l) != 0:
-        print(i)
+        # print(i)
         l = grab_messages(200, i, chat_id)
         for elem in l:
             if elem in ans:
