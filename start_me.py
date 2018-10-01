@@ -29,34 +29,33 @@ def vk_timeout(place, *args, **kwargs):
 
 @logger
 def db_init():
-    global cursor
-    result = list(cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='token_table'"))
-    if result == []:
+    global connection
+    connection = sqlite3.connect('chat_data.db', isolation_level=None)
+    result = list(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='token_table'"))
+    if not result:
         # first-time
-        cursor.execute('CREATE TABLE token_table (value text)')
-    result = list(cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='id_to_name'"))
-    if result == []:
+        connection.execute('CREATE TABLE token_table (value text)')
+    result = list(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='userid_to_username'"))
+    if not result:
         # first-time
-        cursor.execute('CREATE TABLE id_to_name (id text, name text)')
+        connection.execute('CREATE TABLE userid_to_username (id text, name text)')
+    result = list(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chatid_to_chatname'"))
+    if not result:
+        # first-time
+        connection.execute('CREATE TABLE chatid_to_chatname (id text, name text)')
 
 
 @logger
 def api_init():
-    global api, access_token, cursor, conn
-    conn = sqlite3.connect('chat_data.db')
-    cursor = conn.cursor()
+    global api, connection
     db_init()
-
-    tokens = list(cursor.execute('SELECT * from token_table'))
+    tokens = list(connection.execute('SELECT * from token_table'))
     if len(tokens) == 0:
         build_auth_window()
         vk_session = vk.AuthSession(app_id='4771271', user_login=login, user_password=password, scope=4096)
-        access_token = vk_session.access_token
-        cursor.execute('INSERT INTO token_table VALUES (?)', (access_token,))
-        conn.commit()
+        connection.execute('INSERT INTO token_table VALUES (?)', (vk_session.access_token,))
     elif len(tokens) == 1:
-        access_token = tokens[0]
-        vk_session = vk.Session(access_token=access_token)
+        vk_session = vk.Session(access_token=tokens[0])
     else:
         logging.error('More than one token in database')
         vk_session = None
@@ -94,49 +93,60 @@ def build_auth_window():
 
 @logger
 def name_by_id(num):
-    global api, cursor, conn
-    result = list(cursor.execute("SELECT name FROM id_to_name WHERE id=(?)", (num,)))
+    global api, connection
+    result = list(connection.execute("SELECT name FROM userid_to_username WHERE id=(?)", (num,)))
     if result == []:
         # first-time this guy
         a = api.users.get(user_ids=num)
         vk_timeout(place="name by id")
         name = a[0]['first_name'] + ' ' + a[0]['last_name']
-        cursor.execute('INSERT INTO id_to_name VALUES (?, ?)', (num, name))
-        conn.commit()
+        connection.execute('INSERT INTO userid_to_username VALUES (?, ?)', (num, name))
         return name
     return result[0][0]
 
 
 @logger
 def to_put(a):
-    return a['id'], name_by_id(a['user_id']), len(a['body'])
+    return (a['id'], a['user_id'], len(a['body']))
 
 
 @logger
 def grab_messages(count, offset, chat_id):
     global api
-    a = api.messages.getHistory(count=count, offset=offset, chat_id=chat_id)
+    messages = api.messages.getHistory(count=count, offset=offset, chat_id=chat_id)
     vk_timeout(place="grab messages")
-    a = a['items']
-    ans = set()
-    for i in a:
-        ans.add(to_put(i))
-    return ans
+    messages = messages['items']
+    return set(map(to_put, messages))
 
 
 @logger
-def grab_all_messages(ans, chat_id):
+def grab_all_messages(chat_id):
     i = 0
     l = [0]
-    while len(l) != 0:
-        # print(i)
+    table_name = " 'chat" + str(chat_id) + "' "
+    result = list(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=" + table_name))
+    if not result:
+        # first-time
+        connection.execute('CREATE TABLE' + table_name + '(message_id integer, username text, length integer)')
+        border = 0
+    try:
+        border = int(connection.execute('SELECT MAX(message_id) FROM' + table_name).fetchone()[0])
+    except:
+        border = 0
+    bad = False
+    while len(l) != 0 and not bad:
         l = grab_messages(200, i, chat_id)
+        bad = False
         for elem in l:
-            if elem in ans:
-                ans |= l
-                return
+            if elem[0] <= border:
+                bad = True
+                # return
+            else:
+                connection.execute('INSERT INTO' + table_name + 'VALUES (?, ?, ?)', elem)
         i += 200
-        ans |= l
+
+
+# \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
 
 
 @logger
@@ -150,20 +160,16 @@ def get_chats():
 
         return a, b
     except:
-        chats = [0]
+        chats = []
         bchats = dict()
-        b = len(chats)
-        temp = api.messages.getChat(chat_id=b)
-        vk_timeout(place="get chats")
         while True:
-            chats.append(temp['title'])
-            bchats[chats[-1]] = len(chats) - 1
-            b += 1
             try:
-                temp = api.messages.getChat(chat_id=b)
-                vk_timeout(place="get chats while true", cnt=b)
+                temp = api.messages.getChat(chat_id=len(chats) + 1)
+                vk_timeout(place="get chats while true", cnt=len(chats) + 1)
             except:
                 break
+            chats.append(temp['title'])
+            bchats[chats[-1]] = len(chats)
 
         # DB!
         f = open('chats', 'w', encoding='utf-8')
@@ -174,58 +180,29 @@ def get_chats():
 
 
 @logger
-def update(chat_id):
-    try:
-        # DB!
-        our = eval(open(str(chat_id)).read())
-    except:
-        our = set()
-    grab_all_messages(our, chat_id)
-
-    # DB!
-    f = open(str(chat_id), 'w', encoding='utf-8')
-    f.write(str(our))
-    f.close()
-
-    return our
-
-
-@logger
-def vk_stop():
-    # DB!
-    pass
-
-
-@logger
 def vk_full_update():
     for i in range(1, 100):
-        update(i)
+        grab_all_messages(i)
 
 
 @logger
-def show_standart(chat_id, mess):
-    global api, cb
+def show_standart(chat_id):
+    global api, cb, connection
     res = Tk()
     res.geometry('400x800')
-    our = dict()
-    ans = []
-    for e in mess:
-        if e[1] not in our:
-            our[e[1]] = len(ans)
-            ans.append([0, 0, e[1]])
-        ans[our[e[1]]][0] += 1
-        ans[our[e[1]]][1] += e[2]
     temp = cb.get()
     if temp == "По количеству сообщений":
-        f = lambda n: n[0]
+        ans = list(connection.execute('SELECT username, COUNT(length) FROM chat' + str(
+            chat_id) + ' GROUP BY username ORDER BY COUNT(length) DESC'))
     elif temp == "По количеству символов":
-        f = lambda n: n[1]
+        ans = list(connection.execute(
+            'SELECT username, SUM(length) FROM chat' + str(chat_id) + ' GROUP BY username ORDER BY SUM(length) DESC'))
     else:
-        f = lambda n: round(n[1] / n[0], 3)
-    ans.sort(reverse=True, key=f)
+        ans = list(connection.execute(
+            'SELECT username, AVG(length) FROM chat' + str(chat_id) + ' GROUP BY username ORDER BY AVG(length) DESC'))
     s = ''
     for elem in ans:
-        s += str(elem[2]) + ' ' + str(f(elem)) + '\n'
+        s += str(name_by_id(elem[0])) + ' ' + str(elem[1]) + '\n'
     t = Label(res, text=s)
     t.pack()
 
@@ -240,8 +217,8 @@ def show_standart(chat_id, mess):
 def besedka(event):
     global ncb
     bes = bchats[ncb.get()]
-    curr = update(bes)
-    show_standart(bchats[ncb.get()], curr)
+    grab_all_messages(bes)
+    show_standart(bchats[ncb.get()])
 
 
 @logger
@@ -262,8 +239,6 @@ def show_main_window():
     main.mainloop()
 
 
-access_token = 0
-api = None
 ncb = 0
 
 logging.basicConfig(format=u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s',
@@ -272,4 +247,3 @@ logging.basicConfig(format=u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(a
 api_init()
 chats, bchats = get_chats()
 show_main_window()
-vk_stop()
