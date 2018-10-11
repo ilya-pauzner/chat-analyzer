@@ -3,7 +3,7 @@ import logging
 import sqlite3
 from time import sleep
 from tkinter import *
-from tkinter.ttk import Combobox, Label
+from tkinter.ttk import Combobox
 
 from vk import API, AuthSession, Session
 from vk.exceptions import VkAPIError
@@ -20,6 +20,14 @@ def logger(func):
         return func(*args, **kwargs)
 
     return wrapper
+
+@logger
+def unpack_value(data):
+    if not isinstance(data, (int, float, str, type(None))):
+        data = list(data)
+    if isinstance(data, (list, tuple)):
+        return unpack_value(data[0])
+    return data
 
 
 @logger
@@ -59,16 +67,14 @@ def api_init():
 
 
 @logger
-def enter(event):
-    global login, password
-    login = e1.get()
-    password = e2.get()
-    root.destroy()
-
-
-@logger
 def build_auth_window():
-    global root, e1, e2
+    @logger
+    def enter(event):
+        global login, password
+        login = e1.get()
+        password = e2.get()
+        root.destroy()
+
     root = Tk()
     root.geometry("400x400")
     a = Label(root, text="Логин:")
@@ -96,11 +102,10 @@ def name_by_id(num):
         name = a[0]['first_name'] + ' ' + a[0]['last_name']
         connection.execute('INSERT INTO userid_to_username VALUES (?, ?)', (num, name))
         return name
-    ANSWER = result[0][0]
     return result[0][0]
 
 
-@logger
+# @logger
 def to_put(a):
     return a['id'], a['user_id'], len(a['body'])
 
@@ -118,11 +123,11 @@ def grab_messages(count, offset, chat_id):
 def grab_all_messages(chat_id):
     i = 0
     l = [0]
-    table_name = " 'chat" + str(chat_id) + "' "
+    table_name = " 'chat%d' " % chat_id
     if not list(connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s" % table_name)):
         # first-time
         connection.execute('CREATE TABLE %s (message_id integer, user_id integer, length integer)' % table_name)
-    border = list(connection.execute('SELECT MAX(message_id) FROM' + table_name))[0]
+    border = unpack_value(connection.execute('SELECT MAX(message_id) FROM %s' % table_name))
     if border is None:
         border = 0
     else:
@@ -142,7 +147,7 @@ def grab_all_messages(chat_id):
 @logger
 def get_chats():
     global api, connection
-    cur = list(connection.execute('SELECT MAX(id) FROM chatid_to_chatname'))[0][0]
+    cur = unpack_value(connection.execute('SELECT MAX(id) FROM chatid_to_chatname'))
     if cur is None:
         cur = 1
     else:
@@ -158,23 +163,22 @@ def get_chats():
 
 
 @logger
-def show_standart(chat_id):
-    global api, cb, connection
-    res = Tk()
-    res.geometry('400x800')
-    temp = cb.get()
-    if temp == "По количеству сообщений":
-        ans = list(connection.execute('SELECT user_id, COUNT(length) FROM chat' + str(
-            chat_id) + ' GROUP BY user_id ORDER BY COUNT(length) DESC'))
-    elif temp == "По количеству символов":
+def show_standart(chat_id, query_type):
+    global api, connection, root
+    res = Toplevel(root)
+    # res.geometry('400x800')
+    if query_type == "По количеству сообщений":
         ans = list(connection.execute(
-            'SELECT user_id, SUM(length) FROM chat' + str(chat_id) + ' GROUP BY user_id ORDER BY SUM(length) DESC'))
+                'SELECT user_id, COUNT(length) FROM chat%d GROUP BY user_id ORDER BY COUNT(length) DESC' % chat_id))
+    elif query_type == "По количеству символов":
+        ans = list(connection.execute(
+                'SELECT user_id, SUM(length) FROM chat%d GROUP BY user_id ORDER BY SUM(length) DESC' % chat_id))
     else:
         ans = list(connection.execute(
-            'SELECT user_id, AVG(length) FROM chat' + str(chat_id) + ' GROUP BY user_id ORDER BY AVG(length) DESC'))
+                'SELECT user_id, AVG(length) FROM chat%d GROUP BY user_id ORDER BY AVG(length) DESC' % chat_id))
     s = ''
     for elem in ans:
-        s += str(name_by_id(elem[0])) + ' ' + str(elem[1]) + '\n'
+        s += '%s %s\n' % (name_by_id(elem[0]), str(elem[1]))
     t = Label(res, text=s)
     t.pack()
 
@@ -182,41 +186,46 @@ def show_standart(chat_id):
     b.bind('<Button-1>', lambda n: api.messages.send(chat_id=chat_id, message=s))
     b.pack()
 
-    res.mainloop()
-
-
-@logger
-def besedka(event):
-    global ncb, connection
-    bes = list(connection.execute('SELECT id FROM chatid_to_chatname WHERE name=(?)', (ncb.get(),)))[0][0]
-    print(bes)
-    grab_all_messages(bes)
-    show_standart(bes)
+    res.bind("q", lambda ev: res.destroy())
+    res.bind("Q", lambda ev: res.destroy())
+    res.bind("<Escape>", lambda ev: res.destroy())
 
 
 @logger
 def show_main_window():
-    global ncb, cb, connection
-    main = Tk()
-    main.geometry('500x500')
-    b5 = Button(main, text='Запуск')
+    @logger
+    def besedka(event):
+        global connection
+        bes = unpack_value(connection.execute('SELECT id FROM chatid_to_chatname WHERE name=(?)', (ncb.get(),)))
+        print("!!!!", bes)
+        grab_all_messages(bes)
+        show_standart(bes, cb.get())
+
+    global connection, root
+    root = Tk()
+    root.geometry('500x500')
+    b5 = Button(root, text='Запуск')
     b5.bind('<Button-1>', besedka)
     b5.pack()
-    cb = Combobox(main, values=['По количеству сообщений', 'По средней длине сообщения', 'По количеству символов'],
+    cb = Combobox(root, values=['По количеству сообщений', 'По средней длине сообщения', 'По количеству символов'],
                   height=20, width=30)
     cb.set('По количеству сообщений')
     cb.pack()
-    ncb = Combobox(main, values=[i[0] for i in list(connection.execute('SELECT name from chatid_to_chatname'))],
+    ncb = Combobox(root, values=[i[0] for i in list(connection.execute('SELECT name from chatid_to_chatname'))],
                    height=20,
                    width=30)
     ncb.pack()
-    main.mainloop()
+
+    root.bind("q", lambda ev: root.destroy())
+    root.bind("Q", lambda ev: root.destroy())
+    root.bind("<Escape>", lambda ev: root.destroy())
+
+    root.mainloop()
 
 
-ncb = 0
-cb = 0
 logging.basicConfig(format=u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s',
                     level=logging.INFO)
+root = None
 api_init()
 get_chats()
 show_main_window()
